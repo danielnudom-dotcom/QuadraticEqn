@@ -82,7 +82,7 @@
     </div>
 
     <script type="module">
-    const AUTHORIZED_EMAIL = 'danielnudom@gmail.com';
+    import { AUTHORIZED_EMAIL } from './auth-config.js';
 
     const emailInput = document.getElementById('emailInput');
     const submitBtn = document.getElementById('submitBtn');
@@ -128,7 +128,9 @@
             }, 500);
         } else {
             hideSpinner();
-            showMessage('Access denied. Only ' + AUTHORIZED_EMAIL.substring(0,3) + '**********@gmail.com can access.');
+            // Show a masked hint: first 3 letters followed by 8 asterisks
+            const hint = AUTHORIZED_EMAIL.substring(0,3) + '********';
+            showMessage('Access denied. Only ' + hint + ' can access.');
         }
     });
 

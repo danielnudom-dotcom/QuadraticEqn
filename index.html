@@ -68,6 +68,10 @@
                                     <span class="type-icon">📁</span>
                                     <span class="type-label">All</span>
                                 </button>
+                                <button class="file-type-btn" data-type="text" title="Text Ads">
+                                    <span class="type-icon">✏️</span>
+                                    <span class="type-label">Text</span>
+                                </button>
                                 <button class="file-type-btn" data-type="banner" title="Banner Images">
                                     <span class="type-icon">🖼️</span>
                                     <span class="type-label">Banner</span>
@@ -87,6 +91,16 @@
                                 <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #1e293b;">🔗 Ads Redirect Link (Optional)</label>
                                 <input type="url" id="adsRedirectLink" placeholder="https://example.com/redirect" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
                                 <p style="font-size: 12px; color: #64748b; margin-top: 6px;">Enter the URL where users should be redirected when they click on this ad</p>
+                            </div>
+                            
+                            <!-- Text Ad Input -->
+                            <div id="textAdSection" style="margin-top: 16px; display:none; opacity:0.6;">
+                                <label style="display:block; font-weight:600; margin-bottom:8px; color:#1e293b;">✏️ Text Ad</label>
+                                <textarea id="textAdContent" placeholder="Enter short promotional text for this ad" rows="4" style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;" disabled></textarea>
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px;">
+                                    <small style="color:#64748b;">Short text up to 500 characters</small>
+                                    <button id="saveTextAdBtn" style="padding:8px 12px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.9rem;" disabled>Save Text Ad</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -171,8 +185,8 @@
     import DROPBOX_CONFIG from './dropbox-config.js';
 
     // Firebase config
-    const firebaseConfig = {
-        apiKey: "AIzaSyAyC6UrcaRrHRlXIhA0ZoZJ7O_bqA7qS5s",
+const firebaseConfig = {
+    apiKey: "AIzaSyAyC6UrcaRrHRlXIhA0ZoZJ7O_bqA7qS5s",
     authDomain: "quadraticeqn-b0021.firebaseapp.com",
     databaseURL: "https://quadraticeqn-b0021-default-rtdb.firebaseio.com",
     projectId: "quadraticeqn-b0021",
@@ -180,10 +194,11 @@
     messagingSenderId: "112828185217",
     appId: "1:112828185217:web:cd58a762c5720f062d6b80",
     measurementId: "G-LK4YH1R9W3"
-    };
-    const AUTHORIZED_EMAIL = 'ugomartinsdegreat@gmail.com';
+};
 
-    
+
+    import { AUTHORIZED_EMAIL } from './auth-config.js';
+
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getDatabase(app);
@@ -199,6 +214,9 @@
     const uploadBtn = document.getElementById('uploadBtn');
     const resultsList = document.getElementById('resultsList');
     const adsRedirectLinkInput = document.getElementById('adsRedirectLink');
+    const textAdContent = document.getElementById('textAdContent');
+    const saveTextAdBtn = document.getElementById('saveTextAdBtn');
+    const textAdSection = document.getElementById('textAdSection');
     const fileTypeButtons = document.querySelectorAll('.file-type-btn');
     let selectedFiles = [];
     let selectedFileType = 'all';
@@ -295,8 +313,56 @@
             fileTypeButtons.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             selectedFileType = btn.dataset.type;
+            
+            // Enable/disable text ad section based on selection
+            if (selectedFileType === 'text') {
+                textAdSection.style.display = 'block';
+                textAdSection.style.opacity = '1';
+                textAdContent.disabled = false;
+                saveTextAdBtn.disabled = false;
+            } else {
+                textAdSection.style.display = 'none';
+                textAdSection.style.opacity = '0.6';
+                textAdContent.disabled = true;
+                saveTextAdBtn.disabled = true;
+            }
         });
     });
+
+    // Simple toast helper
+    function showToast(message, duration = 3000) {
+        const container = document.getElementById('toastContainer');
+        if (!container) { alert(message); return; }
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.textContent = message;
+        toast.style.cssText = 'background:#111827;color:#fff;padding:8px 12px;border-radius:6px;margin-top:8px;box-shadow:0 2px 6px rgba(0,0,0,0.15);';
+        container.appendChild(toast);
+        setTimeout(() => { try { container.removeChild(toast); } catch(_) {} }, duration);
+    }
+
+    // Save Text Ad to Firebase
+    if (saveTextAdBtn) {
+        saveTextAdBtn.addEventListener('click', async () => {
+            const content = (textAdContent && textAdContent.value) ? textAdContent.value.trim() : '';
+            if (!content) { showToast('Please enter text for the ad'); return; }
+            try {
+                const adRef = push(ref(db, 'ads/text'));
+                const payload = {
+                    content: content,
+                    adsRedirectLink: adsRedirectLinkInput ? adsRedirectLinkInput.value.trim() : '',
+                    createdAt: new Date().toISOString(),
+                    createdBy: localStorage.getItem('cloudvault_user_email') || ''
+                };
+                await set(adRef, payload);
+                showToast('Text ad saved');
+                if (textAdContent) textAdContent.value = '';
+            } catch (err) {
+                console.error('[TEXT AD] Save failed', err);
+                showToast('Failed to save text ad');
+            }
+        });
+    }
 
     // Dropbox upload + Firebase save (with improved error reporting, progress, and error handling)
     uploadBtn.addEventListener('click', async () => {
@@ -520,17 +586,22 @@
                     
                     for (const [fileKey, fileData] of Object.entries(files)) {
                         const redirectLinkHtml = fileData.adsRedirectLink ? `<div style="font-size:0.8rem;color:#94a3b8;">Redirect: <a href="${fileData.adsRedirectLink}" target="_blank" style="color:#3b82f6;text-decoration:underline;">${fileData.adsRedirectLink}</a></div>` : '';
-                        
+
+                        // Determine display name (support files and text ads)
+                        const displayName = fileData.fileName || (fileData.content ? (fileData.content.length > 80 ? fileData.content.slice(0,77) + '...' : fileData.content) : '(no name)');
+                        const sizeHtml = fileData.fileSize ? ` | Size: <strong>${(fileData.fileSize / 1024 / 1024).toFixed(2)} MB</strong>` : '';
+                        const uploadedAt = fileData.uploadedAt || fileData.createdAt || '';
+
                         html += `
                             <div class="database-item" style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;">
                                 <div style="flex:1;">
-                                    <div style="font-weight:600;color:#0f172a;">${fileData.fileName}</div>
-                                    <div style="font-size:0.85rem;color:#64748b;">Type: <strong>${category}</strong> | Size: <strong>${(fileData.fileSize / 1024 / 1024).toFixed(2)} MB</strong></div>
-                                    <div style="font-size:0.8rem;color:#94a3b8;">Uploaded: ${new Date(fileData.uploadedAt).toLocaleString()}</div>
+                                    <div style="font-weight:600;color:#0f172a;">${displayName}</div>
+                                    <div style="font-size:0.85rem;color:#64748b;">Type: <strong>${category}</strong>${sizeHtml}</div>
+                                    <div style="font-size:0.8rem;color:#94a3b8;">Uploaded: ${uploadedAt ? new Date(uploadedAt).toLocaleString() : '—'}</div>
                                     ${redirectLinkHtml}
                                 </div>
                                 <div style="display:flex;gap:8px;">
-                                    <a href="${fileData.shareLink}" target="_blank" style="padding:8px 12px;background:#10b981;color:white;border-radius:6px;text-decoration:none;font-size:0.9rem;">Download</a>
+                                    ${fileData.shareLink ? `<a href="${fileData.shareLink}" target="_blank" style="padding:8px 12px;background:#10b981;color:white;border-radius:6px;text-decoration:none;font-size:0.9rem;">Download</a>` : ''}
                                     <button onclick="window.deleteFile('${category}', '${fileKey}')" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.9rem;">Delete</button>
                                 </div>
                             </div>
