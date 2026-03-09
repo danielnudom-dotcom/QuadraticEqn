@@ -416,6 +416,12 @@ AdsUpload/
 
 ## Features in Detail
 
+## Expiration / Time Limit
+
+When creating or uploading an ad you can now specify an expiration period in days. The "Expire After (days)" field appears alongside the redirect link input. Ads with a positive number of days will automatically be marked with an `expiresAt` timestamp in Firebase. The mobile app filters out expired ads and any expired item is clearly indicated in the database view (with a red "expired" label). Set the value to `0` for no expiration.
+
+The upload UI also shows the expiration date in the results list once the upload completes.
+
 ### Drag and Drop
 - Visual feedback when dragging files over the upload area
 - Support for multiple files in a single drag-drop operation

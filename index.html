@@ -8,6 +8,11 @@
 </head>
 <body>
     <!-- Auth handled in separate auth.html -->
+    <!-- Debug: Show loading/auth status -->
+    <div id="authStatus" style="display: block; position: fixed; top: 20px; right: 20px; padding: 12px; background: #f0f0f0; border-radius: 6px; font-size: 12px; z-index: 10000; max-width: 300px;">
+        <div style="font-weight: 600; margin-bottom: 8px;">🔄 Checking authentication...</div>
+        <div id="authStatusText" style="color: #666; font-size: 11px; line-height: 1.4;">Verifying credentials...</div>
+    </div>
 
     <!-- Main App Container -->
     <div id="mainContainer" class="main-container" style="display: none;">
@@ -91,6 +96,13 @@
                                 <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #1e293b;">🔗 Ads Redirect Link (Optional)</label>
                                 <input type="url" id="adsRedirectLink" placeholder="https://example.com/redirect" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
                                 <p style="font-size: 12px; color: #64748b; margin-top: 6px;">Enter the URL where users should be redirected when they click on this ad</p>
+                            </div>
+
+                            <!-- Expiration Input -->
+                            <div style="margin-top: 20px;">
+                                <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #1e293b;">⏳ Expire After (days)</label>
+                                <input type="number" id="adsExpireDays" min="0" step="1" value="30" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
+                                <p style="font-size: 12px; color: #64748b; margin-top: 6px;">Number of days after upload when this ad should be considered expired. Set to 0 for no expiration.</p>
                             </div>
                             
                             <!-- Text Ad Input -->
@@ -223,6 +235,8 @@ const firebaseConfig = {
 
     // Auth logic
     function showMainFor(email) {
+        const authStatus = document.getElementById('authStatus');
+        if (authStatus) authStatus.style.display = 'none';
         if (mainContainer) mainContainer.style.display = 'block';
         if (userEmailSpan) userEmailSpan.textContent = `Signed in as: ${email}`;
         if (signOutBtn) signOutBtn.style.display = 'inline-block';
@@ -252,10 +266,27 @@ const firebaseConfig = {
             return;
         }
         onAuthStateChanged(auth, (user) => {
-            if (user && user.email === AUTHORIZED_EMAIL) {
-                showMainFor(user.email);
+            const authStatus = document.getElementById('authStatus');
+            const authStatusText = document.getElementById('authStatusText');
+            
+            if (user) {
+                console.log('[Auth] User detected:', user.email);
+                if (user.email === AUTHORIZED_EMAIL) {
+                    console.log('[Auth] ✓ Authorized email');
+                    showMainFor(user.email);
+                } else {
+                    console.log('[Auth] ✗ Unauthorized email:', user.email);
+                    if (authStatusText) {
+                        authStatusText.innerHTML = `<span style="color: #ef4444;">⚠️ Unauthorized email: ${user.email}</span><br/>Expected: ${AUTHORIZED_EMAIL}`;
+                    }
+                    setTimeout(() => NAVIGATION_CONFIG.redirectToAuth(), 2000);
+                }
             } else {
-                NAVIGATION_CONFIG.redirectToAuth();
+                console.log('[Auth] No user - redirecting to auth');
+                if (authStatusText) {
+                    authStatusText.innerHTML = `<span style="color: #f97316;">📝 Redirecting to login...</span>`;
+                }
+                setTimeout(() => NAVIGATION_CONFIG.redirectToAuth(), 1500);
             }
         });
     })();
@@ -348,12 +379,19 @@ const firebaseConfig = {
             if (!content) { showToast('Please enter text for the ad'); return; }
             try {
                 const adRef = push(ref(db, 'ads/text'));
+                const _expireDaysEl = document.getElementById('adsExpireDays');
+                const expireDays = parseInt((_expireDaysEl && typeof _expireDaysEl.value !== 'undefined' ? _expireDaysEl.value : '0'), 10) || 0;
+                let expiresAt = null;
+                if (expireDays > 0) {
+                    expiresAt = new Date(Date.now() + expireDays * 86400000).toISOString();
+                }
                 const payload = {
                     content: content,
                     adsRedirectLink: adsRedirectLinkInput ? adsRedirectLinkInput.value.trim() : '',
-                    createdAt: new Date().toISOString(),
+                    uploadedAt: new Date().toISOString(),
                     createdBy: localStorage.getItem('cloudvault_user_email') || ''
                 };
+                if (expiresAt) payload.expiresAt = expiresAt;
                 await set(adRef, payload);
                 showToast('Text ad saved');
                 if (textAdContent) textAdContent.value = '';
@@ -478,6 +516,13 @@ const firebaseConfig = {
                     // Capture adsRedirectLink value from input
                     const adsRedirectLink = adsRedirectLinkInput.value.trim();
 
+                    const _expireDaysEl = document.getElementById('adsExpireDays');
+                    const expireDays = parseInt((_expireDaysEl && typeof _expireDaysEl.value !== 'undefined' ? _expireDaysEl.value : '0'), 10) || 0;
+                    let expiresAt = null;
+                    if (expireDays > 0) {
+                        expiresAt = new Date(Date.now() + expireDays * 86400000).toISOString();
+                    }
+
                     const payload = {
                         fileName: file.name,
                         fileSize: file.size,
@@ -487,6 +532,7 @@ const firebaseConfig = {
                         adsRedirectLink: adsRedirectLink,
                         uploadedAt: new Date().toISOString()
                     };
+                    if (expiresAt) payload.expiresAt = expiresAt;
 
                     const maxAttempts = 3;
                     const timeoutMs = 15000; // 15s per attempt
@@ -514,6 +560,10 @@ const firebaseConfig = {
                             const successHtml = shareLink 
                                 ? `<span>${fileLabel}</span> <a href='${shareLink}' target='_blank' style="color:#10b981; text-decoration:none; font-weight:bold;">✓ Success - Download</a>`
                                 : `<span>${fileLabel}</span> <span style="color:#10b981;">✓ Uploaded (no link)</span>`;
+                            if (expiresAt) {
+                                const expDate = new Date(expiresAt).toLocaleDateString();
+                                successHtml += ` <span style="font-size:0.8rem; color:#64748b;">(expires ${expDate})</span>`;
+                            }
 
                             if (resultItem) {
                                 resultItem.innerHTML = successHtml;
@@ -591,6 +641,8 @@ const firebaseConfig = {
                         const displayName = fileData.fileName || (fileData.content ? (fileData.content.length > 80 ? fileData.content.slice(0,77) + '...' : fileData.content) : '(no name)');
                         const sizeHtml = fileData.fileSize ? ` | Size: <strong>${(fileData.fileSize / 1024 / 1024).toFixed(2)} MB</strong>` : '';
                         const uploadedAt = fileData.uploadedAt || fileData.createdAt || '';
+                        const expiresAt = fileData.expiresAt || '';
+                        const expired = expiresAt && new Date(expiresAt) < new Date();
 
                         html += `
                             <div class="database-item" style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;">
@@ -598,10 +650,14 @@ const firebaseConfig = {
                                     <div style="font-weight:600;color:#0f172a;">${displayName}</div>
                                     <div style="font-size:0.85rem;color:#64748b;">Type: <strong>${category}</strong>${sizeHtml}</div>
                                     <div style="font-size:0.8rem;color:#94a3b8;">Uploaded: ${uploadedAt ? new Date(uploadedAt).toLocaleString() : '—'}</div>
+                                        ${expiresAt ? `<div style="font-size:0.8rem;color:${expired ? '#ef4444' : '#94a3b8'};">Expires: ${new Date(expiresAt).toLocaleString()}${expired ? ' (expired)' : ''}</div>` : ''}
                                     ${redirectLinkHtml}
                                 </div>
                                 <div style="display:flex;gap:8px;">
-                                    ${fileData.shareLink ? `<a href="${fileData.shareLink}" target="_blank" style="padding:8px 12px;background:#10b981;color:white;border-radius:6px;text-decoration:none;font-size:0.9rem;">Download</a>` : ''}
+                                    ${fileData.shareLink ? `
+                                        <a href="${fileData.shareLink}" target="_blank" style="padding:8px 12px;background:#10b981;color:white;border-radius:6px;text-decoration:none;font-size:0.9rem;">Download</a>
+                                        <button onclick="window.open('${fileData.shareLink}','_blank')" style="padding:8px 12px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.9rem;">View</button>
+                                    ` : ''}
                                     <button onclick="window.deleteFile('${category}', '${fileKey}')" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.9rem;">Delete</button>
                                 </div>
                             </div>
